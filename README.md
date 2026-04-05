@@ -1,4 +1,4 @@
-# Gas Meter OCR — SAMGAZ G4 Digit Reader
+# Gas Meter OCR —  Digit Reader
 
 Computer-vision pipeline that reads the 5-digit mechanical display on a SAMGAZ G4 gas meter. Designed to run on a **Raspberry Pi Zero W2** with a camera module, but can also process static images on any machine.
 
