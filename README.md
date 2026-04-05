@@ -53,4 +53,4 @@ All tuneable parameters (ROI coordinates, thresholds, template size) live in `co
 
 ## Tech Stack
 
-Python 3.11+ · OpenCV · NumPy · Flask · picamera2 · RPi.GPIO
+Python 3.13+ · OpenCV · NumPy · Flask · picamera2 · RPi.GPIO
