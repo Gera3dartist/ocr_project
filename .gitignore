@@ -34,6 +34,9 @@ ENV/
 htmlcov/
 .mypy_cache/
 
+# Private images
+images/CANDIDATE.jpg
+
 # OS files
 .DS_Store
 Thumbs.db
