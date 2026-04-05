@@ -2,7 +2,7 @@
 name = "gas-meter-ocr"
 version = "0.1.0"
 description = "SAMGAZ G4 gas meter digit reader for Raspberry Pi Zero W2"
-requires-python = ">=3.13,<3.14"
+requires-python = ">=3.11"
 dependencies = [
     "numpy>=1.24.0,<2.0.0",
     "opencv-python-headless>=4.8.0",
@@ -24,7 +24,7 @@ gui = [
 
 [tool.ruff]
 line-length = 88
-target-version = "py313"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "SIM", "TCH"]
