@@ -1,0 +1,13 @@
+{
+  "roi": {
+    "x_norm": 0.44,
+    "y_norm": 0.44,
+    "w_norm": 0.45,
+    "h_norm": 0.14
+  },
+  "num_digits": 5,
+  "template_size": [40, 60],
+  "working_width": 640,
+  "confidence_threshold": 0.6,
+  "transition_margin": 0.1
+}
