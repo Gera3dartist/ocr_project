@@ -1,10 +1,11 @@
 from pathlib import Path
 
+import cv2
 import numpy as np
 
 from src.config import Config, ROI
 from src.preprocessing import load_and_prepare
-from src.roi_detector import find_counter_window, detect_window_contour, separate_black_red
+from src.roi_detector import find_counter_window, detect_window_contour, separate_black_red, deskew
 
 CANDIDATE = str(Path(__file__).parent.parent / "images" / "CANDIDATE.jpg")
 
@@ -51,6 +52,32 @@ def test_find_counter_window_returns_black_region() -> None:
     # Should be wider than tall
     h, w = black_region.shape
     assert w > h
+
+
+def test_deskew_corrects_tilted_image() -> None:
+    """A tilted dark band on light background should be straightened."""
+    # Simulate a counter region: light bg with a tilted dark band
+    canvas = np.full((60, 200), 180, dtype=np.uint8)
+    center = (100, 30)
+    box = np.array([[10, 10], [190, 10], [190, 50], [10, 50]], dtype=np.float32)
+    M_rot = cv2.getRotationMatrix2D(center, 5, 1.0)
+    ones = np.ones((4, 1), dtype=np.float32)
+    rotated_box = (np.hstack([box, ones]) @ M_rot.T).astype(np.int32)
+    cv2.fillPoly(canvas, [rotated_box], 30)
+
+    result = deskew(canvas)
+    assert result.shape[0] > 0 and result.shape[1] > 0
+    # Verify the result is wider than tall (band is horizontal)
+    assert result.shape[1] > result.shape[0]
+
+
+def test_deskew_preserves_horizontal_image() -> None:
+    """An already-horizontal dark band should not be significantly changed."""
+    canvas = np.full((50, 200), 180, dtype=np.uint8)
+    canvas[10:40, 10:190] = 30
+    result = deskew(canvas)
+    assert result.shape[0] > 0 and result.shape[1] > 0
+    assert np.sum(result < 80) > 100
 
 
 def test_find_counter_window_is_dark() -> None:

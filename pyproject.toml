@@ -21,6 +21,11 @@ dev = [
 gui = [
     "opencv-python>=4.8.0",
 ]
+notebook = [
+    "jupyter>=1.0.0",
+    "ipykernel>=6.0.0",
+    "matplotlib>=3.7.0",
+]
 
 [tool.ruff]
 line-length = 88

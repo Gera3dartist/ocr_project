@@ -66,6 +66,79 @@ def separate_black_red(color_roi: np.ndarray) -> int:
     return int(color_roi.shape[1] * 0.625)
 
 
+def _detect_tilt_angle(region: np.ndarray) -> float:
+    """Detect the tilt angle of the dark counter band.
+
+    Finds the top and bottom edges of the dark band by scanning each column
+    for the dark/light transition, then fits a line to those edge points.
+
+    Args:
+        region: Grayscale image of the counter region.
+
+    Returns:
+        Tilt angle in degrees. Positive = counter-clockwise.
+    """
+    median_val = float(np.median(region))
+    edges = []
+    for col in range(region.shape[1]):
+        dark_rows = np.where(region[:, col] < median_val)[0]
+        if len(dark_rows) > 2:
+            edges.append((col, dark_rows[0]))
+            edges.append((col, dark_rows[-1]))
+
+    if len(edges) < 20:
+        return 0.0
+
+    pts = np.array(edges, dtype=np.float32)
+    vx, vy, _, _ = cv2.fitLine(pts, cv2.DIST_L2, 0, 0.01, 0.01)
+    return float(np.degrees(np.arctan2(vy[0], vx[0])))
+
+
+def deskew(region: np.ndarray) -> np.ndarray:
+    """Remove rotation from a grayscale region to compensate for camera tilt.
+
+    Detects the tilt angle by finding the dark/light boundary edges of the
+    counter band, then rotates to straighten.
+
+    Args:
+        region: Grayscale image of the counter region (dark band with digits).
+
+    Returns:
+        Deskewed grayscale image, cropped to the dark counter content.
+    """
+    angle = _detect_tilt_angle(region)
+
+    if abs(angle) < 0.3:
+        return region
+
+    h, w = region.shape
+    center = (w / 2, h / 2)
+    M = cv2.getRotationMatrix2D(center, angle, 1.0)
+
+    # Compute new bounding size to avoid clipping
+    cos_a = abs(M[0, 0])
+    sin_a = abs(M[0, 1])
+    new_w = int(h * sin_a + w * cos_a)
+    new_h = int(h * cos_a + w * sin_a)
+    M[0, 2] += (new_w - w) / 2
+    M[1, 2] += (new_h - h) / 2
+
+    rotated = cv2.warpAffine(region, M, (new_w, new_h), borderValue=int(np.median(region)))
+
+    # Crop to the dark band in the rotated result
+    median_val = float(np.median(rotated))
+    _, dark_mask = cv2.threshold(rotated, int(median_val), 255, cv2.THRESH_BINARY_INV)
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+    dark_mask = cv2.morphologyEx(dark_mask, cv2.MORPH_CLOSE, kernel)
+    coords = cv2.findNonZero(dark_mask)
+    if coords is not None:
+        x, y, cw, ch = cv2.boundingRect(coords)
+        rotated = rotated[y : y + ch, x : x + cw]
+
+    return rotated
+
+
+
 def find_counter_window(
     gray: np.ndarray, color: np.ndarray, config: Config
 ) -> np.ndarray:
