@@ -23,6 +23,7 @@ sudo apt-get install -y \
     libcap-dev \
     libcamera-dev \
     python3-libcamera \
+    python3-kms++ \
     htop
 
 # --- Swap (needed for building C extensions on 512MB RAM) ---
