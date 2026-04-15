@@ -3,20 +3,19 @@
 import cv2
 import numpy as np
 
-# Under strong LED lighting (OTSU > 120), the threshold overshoots and
-# erodes thin digit strokes (curves in "0", serifs in "3").  We scale
-# the reduction: 0% at OTSU <= 120 (dim/normal), up to 15% at OTSU >= 200.
-_BRIGHT_FLOOR = 120
-_BRIGHT_CEIL = 200
-_MAX_REDUCTION = 0.15
+# OTSU finds the optimal bimodal split, but tends to overshoot — especially
+# under directional LED lighting where thin/curved digit strokes catch less
+# light.  Reducing the threshold by 15% recovers those strokes.  The
+# morphological open that follows cleans the extra noise this admits.
+_OTSU_FACTOR = 0.85
 
 
 def binarize_region(region: np.ndarray) -> np.ndarray:
-    """Binarize a grayscale counter region using OTSU with adaptive reduction.
+    """Binarize a grayscale counter region.
 
-    For dim/normal images (OTSU <= 120) the raw OTSU threshold is used.
-    For bright LED-lit images (OTSU > 120) the threshold is lowered
-    proportionally to preserve thin digit strokes.
+    Uses OTSU to find the bimodal split, then lowers it by 15% to preserve
+    thin digit strokes that directional LED lighting under-illuminates
+    (curves in "0", serifs in "3").
 
     Args:
         region: Grayscale image of the digit area.
@@ -27,12 +26,8 @@ def binarize_region(region: np.ndarray) -> np.ndarray:
     otsu_val, _ = cv2.threshold(
         region, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
     )
-    if otsu_val > _BRIGHT_FLOOR:
-        frac = min(1.0, (otsu_val - _BRIGHT_FLOOR) / (_BRIGHT_CEIL - _BRIGHT_FLOOR))
-        reduction = frac * _MAX_REDUCTION
-        otsu_val = int(otsu_val * (1.0 - reduction))
-
-    _, binary = cv2.threshold(region, otsu_val, 255, cv2.THRESH_BINARY)
+    adjusted = int(otsu_val * _OTSU_FACTOR)
+    _, binary = cv2.threshold(region, adjusted, 255, cv2.THRESH_BINARY)
     return binary
 
 
@@ -55,8 +50,7 @@ def segment_digits(
     """
     binary_full = binarize_region(black_region)
 
-    # Morph open removes speckle noise from dim images without
-    # affecting digit strokes that are at least 3px wide.
+    # Morph open removes the speckle noise that the lowered threshold admits.
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
     binary_full = cv2.morphologyEx(binary_full, cv2.MORPH_OPEN, kernel)
 
