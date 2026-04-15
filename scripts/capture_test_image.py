@@ -21,33 +21,40 @@ import RPi.GPIO as gpio
 from picamera2 import Picamera2
 
 LED_PIN = 2
-WARMUP_SECONDS = 0.5
-EXPOSURE_SETTLE_SECONDS = 1
+LED_WARMUP = 1.0
+AE_SETTLE = 2.0
+SETTLE_FRAMES = 3
 
 
 def capture(output_path: Path) -> Path:
-    """Capture image with LED lighting matching production behavior."""
+    """Capture image with LED lighting matching production behavior.
+
+    Sequence mirrors src/capture.capture_image() exactly:
+        1. LED on, wait for stable brightness
+        2. Camera start, wait for auto-exposure convergence
+        3. Flush settle frames to lock exposure
+        4. Capture final frame
+    """
     gpio.setmode(gpio.BCM)
     gpio.setup(LED_PIN, gpio.OUT)
 
     cam = Picamera2()
     try:
         gpio.output(LED_PIN, gpio.HIGH)
-        time.sleep(WARMUP_SECONDS)
+        time.sleep(LED_WARMUP)
 
         cam.start()
-        time.sleep(EXPOSURE_SETTLE_SECONDS)
-        cam.capture_file(str(output_path))
-        cam.stop()
-        cam.close()
+        time.sleep(AE_SETTLE)
 
-        gpio.output(LED_PIN, gpio.LOW)
-    except Exception:
+        for _ in range(SETTLE_FRAMES):
+            cam.capture_array()
+
+        cam.capture_file(str(output_path))
+
+    finally:
         gpio.output(LED_PIN, gpio.LOW)
         cam.stop()
         cam.close()
-        raise
-    finally:
         gpio.cleanup()
 
     return output_path
