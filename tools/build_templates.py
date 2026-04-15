@@ -1,11 +1,19 @@
 """Build digit templates from meter images.
 
 Usage:
+    # Extract from multiple images (recommended for robustness):
+    python -m tools.build_templates \\
+        images/img1.jpg:0,3,8,3,3 \\
+        images/img2.jpg:0,3,8,3,3
+
+    # Single image:
     python -m tools.build_templates images/CANDIDATE.jpg --labels 0,3,8,1,4
+
+    # Synthetic only (fallback for digits with no real samples):
     python -m tools.build_templates --synthetic-only
 
-The first form extracts digits from an image and saves them as templates.
-The second form generates synthetic templates for all digits 0-9.
+Multiple images from different camera angles build a variant library that
+makes recognition robust to small changes in position, tilt, and lighting.
 """
 
 import argparse
@@ -14,7 +22,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from src.config import Config, ROI, load_config
+from src.config import Config, load_config
 from src.preprocessing import load_and_prepare
 from src.roi_detector import find_counter_window
 from src.segmenter import segment_digits
@@ -27,12 +35,8 @@ def extract_from_image(
     image_path: str,
     labels: list[int],
     config: Config,
-) -> dict[str, np.ndarray]:
+) -> list[tuple[int, np.ndarray]]:
     """Extract digit templates from a meter image.
-
-    Stores all occurrences of each digit. When a digit appears multiple
-    times (e.g., two "0"s), variants are stored as "0", "0_v1", etc.
-    The recognizer tries all variants and uses the best match.
 
     Args:
         image_path: Path to meter image.
@@ -40,24 +44,14 @@ def extract_from_image(
         config: Pipeline config.
 
     Returns:
-        Dict mapping template key to template image.
+        List of (digit_label, template_image) pairs.
     """
     gray, color = load_and_prepare(image_path, config.working_width)
     black_region = find_counter_window(gray, color, config)
     digit_images = segment_digits(
         black_region, config.num_digits, config.template_size
     )
-
-    templates: dict[str, np.ndarray] = {}
-    seen_count: dict[int, int] = {}
-    for label, img in zip(labels, digit_images):
-        if label not in seen_count:
-            seen_count[label] = 0
-            templates[str(label)] = img
-        else:
-            seen_count[label] += 1
-            templates[f"{label}_v{seen_count[label]}"] = img
-    return templates
+    return list(zip(labels, digit_images))
 
 
 def generate_synthetic_templates(
@@ -100,26 +94,64 @@ def generate_synthetic_templates(
 
 
 def save_templates(
-    templates: dict[int | str, np.ndarray], output_path: str
+    templates: dict[str, np.ndarray], output_path: str
 ) -> None:
     """Save templates to .npz archive.
 
-    Keys can be digit ints (0-9) or variant strings ("0_v1").
-
     Args:
-        templates: Dict mapping digit/variant key to template image.
+        templates: Dict mapping template key ("0", "0_v1", ...) to image.
         output_path: Path for the .npz file.
     """
-    arrays = {str(k): v for k, v in templates.items()}
-    np.savez_compressed(output_path, **arrays)
+    np.savez_compressed(output_path, **templates)
+
+
+def build_template_dict(
+    pairs: list[tuple[int, np.ndarray]],
+    synthetic: dict[int, np.ndarray],
+) -> dict[str, np.ndarray]:
+    """Merge real extracted templates with synthetic fallbacks.
+
+    Real templates are stored as variants: "3", "3_v1", "3_v2", etc.
+    Synthetic templates fill in digits that have no real samples.
+
+    Args:
+        pairs: List of (digit_label, image) from extract_from_image calls.
+        synthetic: Synthetic templates for digits 0-9.
+
+    Returns:
+        Dict mapping template key to template image, ready for save.
+    """
+    # Count variants per digit
+    variant_count: dict[int, int] = {}
+    result: dict[str, np.ndarray] = {}
+
+    for label, img in pairs:
+        count = variant_count.get(label, 0)
+        key = str(label) if count == 0 else f"{label}_v{count}"
+        result[key] = img
+        variant_count[label] = count + 1
+
+    # Fill missing digits with synthetic templates
+    for digit in range(10):
+        if digit not in variant_count:
+            result[str(digit)] = synthetic[digit]
+
+    return result
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Build digit templates")
-    parser.add_argument("image", nargs="?", help="Path to meter image")
+    parser = argparse.ArgumentParser(
+        description="Build digit templates from meter images"
+    )
+    parser.add_argument(
+        "sources",
+        nargs="*",
+        help="image_path:labels pairs (e.g. img.jpg:0,3,8,3,3) "
+        "or just image path when --labels is used",
+    )
     parser.add_argument(
         "--labels",
-        help="Comma-separated digit labels for 5 positions (e.g., 0,3,8,1,4)",
+        help="Comma-separated digit labels (for single-image mode)",
     )
     parser.add_argument(
         "--synthetic-only",
@@ -138,32 +170,57 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    # Start with synthetic templates for all digits
-    templates = generate_synthetic_templates()
-    print(f"Generated synthetic templates for digits 0-9")
+    synthetic = generate_synthetic_templates()
+    print("Generated synthetic templates for digits 0-9")
 
-    # Override with real templates if image provided
-    if args.image and args.labels:
-        labels = [int(x) for x in args.labels.split(",")]
-        if len(labels) != 5:
-            parser.error("--labels must have exactly 5 comma-separated digits")
+    # Parse source images
+    image_label_pairs: list[tuple[str, list[int]]] = []
 
-        config = load_config(args.config)
-        real_templates = extract_from_image(args.image, labels, config)
-        # Merge: real templates override synthetic ones
-        for key, img in real_templates.items():
-            digit = int(key.split("_")[0])
-            if key == str(digit):
-                # Primary variant replaces synthetic
-                templates[digit] = img
+    if args.sources:
+        for source in args.sources:
+            if ":" in source:
+                # Format: image_path:0,3,8,3,3
+                path, label_str = source.rsplit(":", 1)
+                labels = [int(x) for x in label_str.split(",")]
+            elif args.labels:
+                # Single image with --labels flag
+                path = source
+                labels = [int(x) for x in args.labels.split(",")]
             else:
-                # Additional variants get negative keys for storage
-                templates[key] = img
-        print(f"Extracted real templates: {sorted(real_templates.keys())}")
+                parser.error(
+                    "Use image:labels format or provide --labels"
+                )
+            if len(labels) != 5:
+                parser.error(f"Need exactly 5 labels, got {len(labels)} for {path}")
+            image_label_pairs.append((path, labels))
+
+    # Extract templates from all source images
+    all_pairs: list[tuple[int, np.ndarray]] = []
+    if image_label_pairs:
+        config = load_config(args.config)
+        for path, labels in image_label_pairs:
+            extracted = extract_from_image(path, labels, config)
+            all_pairs.extend(extracted)
+            print(f"Extracted from {path}: digits {labels}")
+
+    templates = build_template_dict(all_pairs, synthetic)
 
     Path(args.output).parent.mkdir(parents=True, exist_ok=True)
     save_templates(templates, args.output)
+
+    # Summary
+    real_digits = set()
+    variant_counts: dict[int, int] = {}
+    for key in templates:
+        d = int(key.split("_")[0])
+        variant_counts[d] = variant_counts.get(d, 0) + 1
+        if key not in {str(i) for i in range(10)} or all_pairs:
+            real_digits.add(d)
+
     print(f"Saved {len(templates)} templates to {args.output}")
+    for d in sorted(variant_counts):
+        source = "real" if d in {label for label, _ in all_pairs} else "synthetic"
+        print(f"  Digit {d}: {variant_counts[d]} variant(s) ({source})")
 
 
 if __name__ == "__main__":
