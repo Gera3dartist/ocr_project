@@ -23,7 +23,7 @@ def mock_pipeline():
     """Mock capture + pipeline to avoid hardware deps."""
     reading = MeterReading(
         digits="03814",
-        confidence=[0.12, 0.25, 0.18, 0.09, 0.31],
+        confidence=[0.32, 0.25, 0.18, 0.19, 0.31],
         transitioning=[False, False, False, True, False],
     )
     with (

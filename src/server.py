@@ -31,23 +31,45 @@ def create_app() -> Flask:
     def read_measurement():
         """Capture image and run OCR pipeline.
 
+        Retries up to 3 times when min confidence is below 0.10 — this
+        catches occasional camera auto-exposure glitches that produce
+        unusable frames.
+
         Returns:
             JSON with digits, confidence, transitioning, and timestamp.
         """
-        try:
-            with tempfile.NamedTemporaryFile(
-                suffix=".jpg", delete=False
-            ) as tmp:
-                image_path = tmp.name
+        max_attempts = 3
+        min_confidence = 0.10
 
-            capture_image(image_path)
-            reading = read_meter(image_path)
+        try:
+            best = None
+            for attempt in range(max_attempts):
+                with tempfile.NamedTemporaryFile(
+                    suffix=".jpg", delete=False
+                ) as tmp:
+                    image_path = tmp.name
+
+                capture_image(image_path)
+                reading = read_meter(image_path)
+
+                if best is None or min(reading.confidence) > min(best.confidence):
+                    best = reading
+
+                if min(reading.confidence) >= min_confidence:
+                    break
+
+                logger.info(
+                    "Low confidence (%.3f), retrying (%d/%d)",
+                    min(reading.confidence),
+                    attempt + 1,
+                    max_attempts,
+                )
 
             return jsonify(
                 {
-                    "digits": reading.digits,
-                    "confidence": reading.confidence,
-                    "transitioning": reading.transitioning,
+                    "digits": best.digits,
+                    "confidence": best.confidence,
+                    "transitioning": best.transitioning,
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                 }
             )
