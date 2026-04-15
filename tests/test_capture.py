@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from src.capture import LED_PIN, WARMUP_SECONDS
+from src.capture import LED_PIN, LED_WARMUP, AE_SETTLE, SETTLE_FRAMES
 
 
 def test_led_pin_is_gpio2() -> None:
@@ -13,8 +13,11 @@ def test_led_pin_is_gpio2() -> None:
     assert LED_PIN == 2
 
 
-def test_warmup_seconds_is_positive() -> None:
-    assert WARMUP_SECONDS > 0
+def test_timing_constants() -> None:
+    """Warmup and settle times must be long enough for stable capture."""
+    assert LED_WARMUP >= 1.0
+    assert AE_SETTLE >= 2.0
+    assert SETTLE_FRAMES >= 2
 
 
 @pytest.fixture
@@ -69,6 +72,18 @@ def test_capture_takes_photo(
     assert result == output
 
 
+def test_capture_flushes_settle_frames(
+    mock_hardware: tuple, tmp_path: Path
+) -> None:
+    """Camera must discard SETTLE_FRAMES before the actual capture."""
+    _, mock_cam, _ = mock_hardware
+    from src.capture import capture_image
+
+    capture_image(str(tmp_path / "shot.jpg"))
+
+    assert mock_cam.capture_array.call_count == SETTLE_FRAMES
+
+
 def test_capture_cleans_up_gpio(
     mock_hardware: tuple, tmp_path: Path
 ) -> None:
@@ -83,7 +98,7 @@ def test_capture_cleans_up_gpio(
 def test_capture_cleans_up_on_camera_error(
     mock_hardware: tuple, tmp_path: Path
 ) -> None:
-    """GPIO cleanup must happen even if camera raises."""
+    """GPIO cleanup and LED off must happen even if camera raises."""
     mock_gpio, mock_cam, _ = mock_hardware
     mock_cam.capture_file.side_effect = RuntimeError("camera error")
     from src.capture import capture_image

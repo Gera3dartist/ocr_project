@@ -11,7 +11,18 @@ import time
 from typing import Any
 
 LED_PIN = 2
-WARMUP_SECONDS = 0.5
+
+# LED needs ~1s to reach full, stable brightness.
+LED_WARMUP = 1.0
+
+# Camera auto-exposure needs 2s after start() to converge.
+# The first few frames have unstable gain/exposure — we discard them.
+AE_SETTLE = 2.0
+
+# Number of throwaway frames before the real capture.
+# Each frame lets the AE algorithm refine; by the 3rd frame the
+# exposure is locked to the LED-lit scene.
+SETTLE_FRAMES = 3
 
 
 def _import_gpio() -> Any:
@@ -28,7 +39,14 @@ Picamera2: Any = None
 
 
 def capture_image(output_path: str) -> str:
-    """Turn on LED, capture image, turn off LED.
+    """Turn on LED, wait for stable lighting + exposure, capture image.
+
+    Sequence:
+        1. LED on → wait LED_WARMUP for stable brightness
+        2. Camera start → wait AE_SETTLE for auto-exposure convergence
+        3. Flush SETTLE_FRAMES to lock exposure to the lit scene
+        4. Capture final frame
+        5. Cleanup (LED off, camera closed, GPIO released)
 
     Args:
         output_path: File path to save the captured JPEG.
@@ -47,22 +65,25 @@ def capture_image(output_path: str) -> str:
 
     cam = picamera2_cls()
     try:
+        # 1. LED on and warm up
         gpio.output(LED_PIN, gpio.HIGH)
-        time.sleep(WARMUP_SECONDS)
+        time.sleep(LED_WARMUP)
 
+        # 2. Start camera, let auto-exposure converge under LED light
         cam.start()
-        time.sleep(1)  # auto-exposure settle
-        cam.capture_file(output_path)
-        cam.stop()
-        cam.close()
+        time.sleep(AE_SETTLE)
 
-        gpio.output(LED_PIN, gpio.LOW)
-    except Exception:
+        # 3. Flush initial frames so AE is fully locked
+        for _ in range(SETTLE_FRAMES):
+            cam.capture_array()
+
+        # 4. Capture the actual frame
+        cam.capture_file(output_path)
+
+    finally:
         gpio.output(LED_PIN, gpio.LOW)
         cam.stop()
         cam.close()
-        raise
-    finally:
         gpio.cleanup()
 
     return output_path
