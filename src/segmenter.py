@@ -21,10 +21,13 @@ def segment_digits(
     Returns:
         List of binarized digit images, each sized to template_size.
     """
-    # Adaptive threshold on the full region first for better results
-    binary_full = cv2.adaptiveThreshold(
-        black_region, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 21, -5
+    # OTSU works better than adaptive on these small counter regions where the
+    # digit/background contrast is bimodal. Morph open removes speckle noise.
+    _, binary_full = cv2.threshold(
+        black_region, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
     )
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
+    binary_full = cv2.morphologyEx(binary_full, cv2.MORPH_OPEN, kernel)
 
     h, w = black_region.shape
     slot_width = w / num_digits

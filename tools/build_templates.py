@@ -65,8 +65,8 @@ def generate_synthetic_templates(
 ) -> dict[int, np.ndarray]:
     """Generate synthetic digit templates using OpenCV text rendering.
 
-    These approximate mechanical counter digits. Real templates from
-    actual meter images will always be more accurate.
+    Uses thick, bold rendering to approximate mechanical counter digits.
+    Real templates from actual meter images will always be more accurate.
 
     Args:
         template_size: (width, height) of each template.
@@ -80,15 +80,20 @@ def generate_synthetic_templates(
     for digit in range(10):
         img = np.zeros((th, tw), dtype=np.uint8)
         text = str(digit)
-        font = cv2.FONT_HERSHEY_SIMPLEX
-        scale = 1.2
-        thickness = 2
+        font = cv2.FONT_HERSHEY_DUPLEX
+        scale = 1.4
+        thickness = 3
 
         text_size = cv2.getTextSize(text, font, scale, thickness)[0]
         x = (tw - text_size[0]) // 2
         y = (th + text_size[1]) // 2
 
         cv2.putText(img, text, (x, y), font, scale, 255, thickness)
+
+        # Dilate slightly to approximate the thick mechanical counter style
+        kern = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        img = cv2.dilate(img, kern, iterations=1)
+
         templates[digit] = img
 
     return templates

@@ -73,6 +73,39 @@ python -c "import RPi.GPIO; print('RPi.GPIO: OK')"
 python -c "import libcamera; print('libcamera: OK')"
 python -c "from picamera2 import Picamera2; print('picamera2: OK')"
 
+# --- Systemd service ---
+echo ""
+echo "=== Installing systemd service ==="
+SERVICE_NAME="gas-meter-ocr"
+SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+TEMPLATE="${SCRIPT_DIR}/gas-meter-ocr.service"
+
+# Generate service file from template, substituting actual paths and user
+CURRENT_USER="$(whoami)"
+CURRENT_GROUP="$(id -gn)"
+sed \
+    -e "s|User=pi|User=${CURRENT_USER}|" \
+    -e "s|Group=pi|Group=${CURRENT_USER}|" \
+    -e "s|/home/pi/ocr_project|${PROJECT_DIR}|g" \
+    "${TEMPLATE}" | sudo tee "${SERVICE_FILE}" > /dev/null
+
+sudo systemctl daemon-reload
+sudo systemctl enable "${SERVICE_NAME}"
+sudo systemctl restart "${SERVICE_NAME}"
+
+echo "Service installed and started."
+echo ""
+
+# --- Status check ---
+echo "=== Service status ==="
+sudo systemctl status "${SERVICE_NAME}" --no-pager || true
+
 echo ""
 echo "=== Deployment complete ==="
-echo "Activate with: source ${PROJECT_DIR}/.venv/bin/activate"
+echo ""
+echo "Useful commands:"
+echo "  sudo systemctl status  ${SERVICE_NAME}   # check status"
+echo "  sudo systemctl restart ${SERVICE_NAME}   # restart"
+echo "  sudo systemctl stop    ${SERVICE_NAME}   # stop"
+echo "  sudo journalctl -u     ${SERVICE_NAME} -f  # tail logs"

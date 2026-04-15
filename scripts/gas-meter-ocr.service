@@ -1,0 +1,26 @@
+[Unit]
+Description=Gas Meter OCR - Flask API for SAMGAZ G4 digit reading
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/ocr_project
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/pi/ocr_project/.venv/bin/python -m src.server
+Restart=on-failure
+RestartSec=5
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+# Hardware access
+SupplementaryGroups=gpio video i2c
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=gas-meter-ocr
+
+[Install]
+WantedBy=multi-user.target

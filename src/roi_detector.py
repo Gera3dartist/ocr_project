@@ -139,6 +139,52 @@ def deskew(region: np.ndarray) -> np.ndarray:
 
 
 
+def strip_frame_border(region: np.ndarray) -> np.ndarray:
+    """Remove bright frame border rows from top and bottom of the counter window.
+
+    The contour detector often includes the metallic frame surrounding the
+    digit drum. These rows are significantly brighter than the dark digit
+    background and corrupt downstream thresholding.
+
+    Args:
+        region: Grayscale counter window image.
+
+    Returns:
+        Cropped region with frame border rows removed.
+    """
+    h = region.shape[0]
+    if h < 5:
+        return region
+
+    row_means = np.array([float(region[r, :].mean()) for r in range(h)])
+    overall_median = float(np.median(region))
+    peak = float(row_means.max())
+
+    # Frame rows have mean brightness well above the overall median
+    thresh = overall_median + (peak - overall_median) * 0.4
+
+    top = 0
+    for r in range(h):
+        if row_means[r] < thresh:
+            top = r
+            break
+
+    bottom = h
+    for r in range(h - 1, -1, -1):
+        if row_means[r] < thresh:
+            bottom = r + 1
+            break
+
+    # Keep at least 40% of the original height
+    min_height = int(h * 0.4)
+    if bottom - top < min_height:
+        center = h // 2
+        top = max(0, center - min_height // 2)
+        bottom = min(h, top + min_height)
+
+    return region[top:bottom, :]
+
+
 def find_counter_window(
     gray: np.ndarray, color: np.ndarray, config: Config
 ) -> np.ndarray:
@@ -185,4 +231,6 @@ def find_counter_window(
 
     # Separate black from red section
     boundary = separate_black_red(window_color)
-    return window_gray[:, :boundary]
+    black_region = window_gray[:, :boundary]
+
+    return strip_frame_border(black_region)
