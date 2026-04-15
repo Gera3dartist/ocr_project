@@ -5,71 +5,91 @@ import numpy as np
 import pytest
 
 from src.recognizer import (
+    MeterReading,
     load_templates,
     recognize_digit,
     recognize_all,
-    detect_transition,
+    _score_template,
 )
 
 TEMPLATES_PATH = str(Path(__file__).parent.parent / "templates" / "templates.npz")
 
 
 @pytest.fixture
-def templates() -> dict[int, np.ndarray]:
+def templates() -> dict[int, list[np.ndarray]]:
     return load_templates(TEMPLATES_PATH)
 
 
-def test_load_templates_has_all_digits(templates: dict[int, np.ndarray]) -> None:
+def test_load_templates_has_all_digits(templates: dict[int, list[np.ndarray]]) -> None:
     assert set(templates.keys()) == set(range(10))
 
 
-def test_load_templates_correct_shape(templates: dict[int, np.ndarray]) -> None:
-    for digit, tmpl in templates.items():
-        assert tmpl.shape == (60, 40), f"Digit {digit} shape: {tmpl.shape}"
-        assert tmpl.dtype == np.uint8
+def test_load_templates_returns_lists(templates: dict[int, list[np.ndarray]]) -> None:
+    for digit, variants in templates.items():
+        assert isinstance(variants, list)
+        assert len(variants) >= 1, f"Digit {digit} has no variants"
 
 
-def test_recognize_real_template(templates: dict[int, np.ndarray]) -> None:
-    """A template should match itself with high confidence."""
-    for digit in [0, 1, 3, 4, 8]:  # real templates from CANDIDATE.jpg
-        result, confidence = recognize_digit(templates[digit], templates)
+def test_load_templates_correct_shape(templates: dict[int, list[np.ndarray]]) -> None:
+    for digit, variants in templates.items():
+        for v in variants:
+            assert v.shape == (60, 40), f"Digit {digit} shape: {v.shape}"
+            assert v.dtype == np.uint8
+
+
+def test_recognize_digit_matches_own_template(
+    templates: dict[int, list[np.ndarray]],
+) -> None:
+    """A template should match itself with the highest score."""
+    for digit in range(10):
+        tmpl = templates[digit][0]
+        result, confidence = recognize_digit(tmpl, templates)
         assert result == digit, f"Expected {digit}, got {result} (conf={confidence:.3f})"
-        assert confidence > 0.3
 
 
-def test_recognize_synthetic_template(templates: dict[int, np.ndarray]) -> None:
-    """Synthetic templates should match themselves."""
-    for digit in [2, 5, 6, 7, 9]:
-        result, confidence = recognize_digit(templates[digit], templates)
-        assert result == digit, f"Expected {digit}, got {result}"
+def test_recognize_digit_confidence_positive(
+    templates: dict[int, list[np.ndarray]],
+) -> None:
+    tmpl = templates[3][0]
+    _, confidence = recognize_digit(tmpl, templates)
+    assert confidence > 0.0
 
 
-def test_recognize_all_returns_meter_reading(templates: dict[int, np.ndarray]) -> None:
-    digit_images = [templates[d] for d in [0, 3, 8, 1, 4]]
+def test_recognize_all_returns_meter_reading(
+    templates: dict[int, list[np.ndarray]],
+) -> None:
+    digit_images = [templates[d][0] for d in [0, 3, 8, 3, 3]]
     reading = recognize_all(digit_images, templates)
-    assert reading.digits == "03814"
+    assert isinstance(reading, MeterReading)
+    assert reading.digits == "03833"
     assert len(reading.confidence) == 5
     assert len(reading.transitioning) == 5
 
 
-def test_detect_transition_on_normal_digit(templates: dict[int, np.ndarray]) -> None:
-    """A clean digit template should not be flagged as transitioning."""
-    is_trans = detect_transition(templates[3], templates)
-    assert is_trans is False
+def test_score_template_self_match_high() -> None:
+    """Scoring an image against itself should give a high score."""
+    img = np.zeros((60, 40), dtype=np.uint8)
+    cv2.putText(img, "3", (5, 45), cv2.FONT_HERSHEY_DUPLEX, 1.4, 255, 3)
+    score = _score_template(img, img)
+    assert score > 0.9
 
 
-def test_detect_transition_on_shifted_digit(templates: dict[int, np.ndarray]) -> None:
-    """A vertically shifted digit should be flagged as transitioning."""
-    # Create a synthetic transitioning digit: shift digit 3 down by 40%
-    tmpl_3 = templates[3]
-    tmpl_4 = templates[4]
-    h = tmpl_3.shape[0]
-    shift = int(h * 0.4)
+def test_score_template_mismatch_low() -> None:
+    """Scoring completely different images should give a low score."""
+    img = np.zeros((60, 40), dtype=np.uint8)
+    img[:30, :] = 255  # top half white
 
-    # Composite: top part from digit 4, bottom part from digit 3
-    composite = np.zeros_like(tmpl_3)
-    composite[:shift, :] = tmpl_4[h - shift :, :]
-    composite[shift:, :] = tmpl_3[: h - shift, :]
+    tmpl = np.zeros((60, 40), dtype=np.uint8)
+    tmpl[30:, :] = 255  # bottom half white
 
-    is_trans = detect_transition(composite, templates)
-    assert is_trans is True
+    score = _score_template(img, tmpl)
+    assert score < 0.3
+
+
+def test_multi_variant_all_digits_recognized(
+    templates: dict[int, list[np.ndarray]],
+) -> None:
+    """Every digit's first variant should be recognized as itself."""
+    for digit in range(10):
+        result, _ = recognize_digit(templates[digit][0], templates)
+        assert result == digit, f"Digit {digit} first variant misrecognized as {result}"

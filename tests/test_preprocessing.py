@@ -4,7 +4,7 @@ import numpy as np
 
 from src.preprocessing import load_and_prepare
 
-CANDIDATE = str(Path(__file__).parent.parent / "images" / "CANDIDATE.jpg")
+CANDIDATE = str(Path(__file__).parent.parent / "images" / "CANDIDATE_ready.jpg")
 
 
 def test_load_returns_gray_and_color() -> None:
@@ -28,7 +28,7 @@ def test_output_dtype_uint8() -> None:
 
 def test_aspect_ratio_preserved() -> None:
     gray, color = load_and_prepare(CANDIDATE, working_width=640)
-    # CANDIDATE.jpg is 960x540, so at 640 width -> height ~360
+    # CANDIDATE_ready.jpg is 1920x1080, so at 640 width -> height = 360
     assert 300 < gray.shape[0] < 400
 
 

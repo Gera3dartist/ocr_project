@@ -7,7 +7,7 @@ from src.preprocessing import load_and_prepare
 from src.roi_detector import find_counter_window
 from src.segmenter import segment_digits
 
-CANDIDATE = str(Path(__file__).parent.parent / "images" / "CANDIDATE.jpg")
+CANDIDATE = str(Path(__file__).parent.parent / "images" / "CANDIDATE_ready.jpg")
 
 
 def _get_black_region() -> np.ndarray:

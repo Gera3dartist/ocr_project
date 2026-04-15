@@ -92,3 +92,36 @@ def test_health_endpoint(client) -> None:
     assert resp.status_code == 200
     data = json.loads(resp.data)
     assert data["status"] == "ok"
+
+
+# --- /capture endpoint tests ---
+
+
+def test_capture_endpoint_returns_png(client) -> None:
+    """GET /capture must return a PNG image."""
+    import numpy as np
+
+    # Mock capture to write a real image, and mock the pipeline stages
+    fake_region = np.full((20, 100), 50, dtype=np.uint8)
+    with (
+        patch("src.server.capture_image", return_value="/tmp/shot.jpg"),
+        patch("src.server.load_and_prepare", return_value=(fake_region, fake_region)),
+        patch("src.server.find_counter_window", return_value=fake_region),
+    ):
+        resp = client.get("/capture")
+        assert resp.status_code == 200
+        assert resp.content_type == "image/png"
+        # PNG files start with the PNG magic bytes
+        assert resp.data[:4] == b"\x89PNG"
+
+
+def test_capture_endpoint_handles_error(client) -> None:
+    """If capture fails, return 500 with error."""
+    with patch(
+        "src.server.capture_image",
+        side_effect=RuntimeError("camera disconnected"),
+    ):
+        resp = client.get("/capture")
+        assert resp.status_code == 500
+        data = json.loads(resp.data)
+        assert "error" in data

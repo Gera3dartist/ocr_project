@@ -5,9 +5,15 @@ import numpy as np
 
 from src.config import Config, ROI
 from src.preprocessing import load_and_prepare
-from src.roi_detector import find_counter_window, detect_window_contour, separate_black_red, deskew
+from src.roi_detector import (
+    find_counter_window,
+    detect_window_contour,
+    separate_black_red,
+    strip_frame_border,
+    deskew,
+)
 
-CANDIDATE = str(Path(__file__).parent.parent / "images" / "CANDIDATE.jpg")
+CANDIDATE = str(Path(__file__).parent.parent / "images" / "CANDIDATE_ready.jpg")
 
 
 def _get_preprocessed() -> tuple[np.ndarray, np.ndarray]:
@@ -86,3 +92,54 @@ def test_find_counter_window_is_dark() -> None:
     black_region = find_counter_window(gray, color, config)
     # The black background region should have relatively low mean brightness
     assert black_region.mean() < 150
+
+
+# --- strip_frame_border tests ---
+
+
+def test_strip_frame_border_removes_bright_rows() -> None:
+    """Bright rows at top should be stripped, dark rows kept."""
+    # Simulate: 10 bright rows (frame) + 20 dark rows (digits)
+    frame = np.full((10, 100), 180, dtype=np.uint8)
+    digits = np.full((20, 100), 40, dtype=np.uint8)
+    region = np.vstack([frame, digits])
+
+    result = strip_frame_border(region)
+    assert result.shape[0] < region.shape[0]
+    # Result should be mostly dark (mean < 80)
+    assert result.mean() < 80
+
+
+def test_strip_frame_border_removes_bottom_frame() -> None:
+    """Bright rows at bottom should also be stripped."""
+    digits = np.full((20, 100), 40, dtype=np.uint8)
+    frame = np.full((8, 100), 170, dtype=np.uint8)
+    region = np.vstack([digits, frame])
+
+    result = strip_frame_border(region)
+    assert result.shape[0] < region.shape[0]
+    assert result.mean() < 80
+
+
+def test_strip_frame_border_preserves_uniform_dark() -> None:
+    """An all-dark region should not be significantly altered."""
+    region = np.full((30, 100), 50, dtype=np.uint8)
+    result = strip_frame_border(region)
+    # Should keep at least 40% of height
+    assert result.shape[0] >= int(30 * 0.4)
+
+
+def test_strip_frame_border_keeps_minimum_height() -> None:
+    """Even with lots of bright rows, at least 40% height is preserved."""
+    region = np.full((20, 100), 200, dtype=np.uint8)
+    region[18:, :] = 30  # only 2 dark rows at bottom
+
+    result = strip_frame_border(region)
+    assert result.shape[0] >= int(20 * 0.4)
+
+
+def test_strip_frame_border_tiny_region() -> None:
+    """Regions smaller than 5px should be returned unchanged."""
+    region = np.full((3, 50), 100, dtype=np.uint8)
+    result = strip_frame_border(region)
+    assert result.shape == region.shape
