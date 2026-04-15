@@ -3,6 +3,38 @@
 import cv2
 import numpy as np
 
+# Under strong LED lighting (OTSU > 120), the threshold overshoots and
+# erodes thin digit strokes (curves in "0", serifs in "3").  We scale
+# the reduction: 0% at OTSU <= 120 (dim/normal), up to 15% at OTSU >= 200.
+_BRIGHT_FLOOR = 120
+_BRIGHT_CEIL = 200
+_MAX_REDUCTION = 0.15
+
+
+def binarize_region(region: np.ndarray) -> np.ndarray:
+    """Binarize a grayscale counter region using OTSU with adaptive reduction.
+
+    For dim/normal images (OTSU <= 120) the raw OTSU threshold is used.
+    For bright LED-lit images (OTSU > 120) the threshold is lowered
+    proportionally to preserve thin digit strokes.
+
+    Args:
+        region: Grayscale image of the digit area.
+
+    Returns:
+        Binary image (0 and 255).
+    """
+    otsu_val, _ = cv2.threshold(
+        region, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
+    )
+    if otsu_val > _BRIGHT_FLOOR:
+        frac = min(1.0, (otsu_val - _BRIGHT_FLOOR) / (_BRIGHT_CEIL - _BRIGHT_FLOOR))
+        reduction = frac * _MAX_REDUCTION
+        otsu_val = int(otsu_val * (1.0 - reduction))
+
+    _, binary = cv2.threshold(region, otsu_val, 255, cv2.THRESH_BINARY)
+    return binary
+
 
 def segment_digits(
     black_region: np.ndarray,
@@ -21,11 +53,10 @@ def segment_digits(
     Returns:
         List of binarized digit images, each sized to template_size.
     """
-    # OTSU works better than adaptive on these small counter regions where the
-    # digit/background contrast is bimodal. Morph open removes speckle noise.
-    _, binary_full = cv2.threshold(
-        black_region, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
-    )
+    binary_full = binarize_region(black_region)
+
+    # Morph open removes speckle noise from dim images without
+    # affecting digit strokes that are at least 3px wide.
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
     binary_full = cv2.morphologyEx(binary_full, cv2.MORPH_OPEN, kernel)
 

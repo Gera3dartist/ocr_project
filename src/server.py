@@ -16,7 +16,7 @@ from src.config import load_config
 from src.pipeline import read_meter
 from src.preprocessing import load_and_prepare
 from src.roi_detector import find_counter_window
-from src.segmenter import segment_digits
+from src.segmenter import binarize_region
 
 PROJECT_ROOT = Path(__file__).parent.parent
 
@@ -78,10 +78,7 @@ def create_app() -> Flask:
             gray, color = load_and_prepare(image_path, config.working_width)
             black_region = find_counter_window(gray, color, config)
 
-            # Binarize (same as segmenter does)
-            _, binary = cv2.threshold(
-                black_region, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
-            )
+            binary = binarize_region(black_region)
 
             _, png_bytes = cv2.imencode(".png", binary)
             return send_file(
