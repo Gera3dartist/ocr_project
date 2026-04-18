@@ -63,27 +63,25 @@ def capture_image(output_path: str) -> str:
     gpio.setmode(gpio.BCM)
     gpio.setup(LED_PIN, gpio.OUT)
 
-    cam = picamera2_cls()
-    try:
-        # 1. LED on and warm up
-        gpio.output(LED_PIN, gpio.HIGH)
-        time.sleep(LED_WARMUP)
+    with picamera2_cls() as cam:
+        try:
+            # 1. LED on and warm up
+            gpio.output(LED_PIN, gpio.HIGH)
+            time.sleep(LED_WARMUP)
 
-        # 2. Start camera, let auto-exposure converge under LED light
-        cam.start()
-        time.sleep(AE_SETTLE)
+            # 2. Start camera, let auto-exposure converge under LED light
+            cam.start()
+            time.sleep(AE_SETTLE)
 
-        # 3. Flush initial frames so AE is fully locked
-        for _ in range(SETTLE_FRAMES):
-            cam.capture_array()
+            # 3. Flush initial frames so AE is fully locked
+            for _ in range(SETTLE_FRAMES):
+                cam.capture_array()
 
-        # 4. Capture the actual frame
-        cam.capture_file(output_path)
+            # 4. Capture the actual frame
+            cam.capture_file(output_path)
 
-    finally:
-        gpio.output(LED_PIN, gpio.LOW)
-        cam.stop()
-        cam.close()
-        gpio.cleanup()
+        finally:
+            gpio.output(LED_PIN, gpio.LOW)
+            gpio.cleanup()
 
     return output_path
