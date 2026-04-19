@@ -71,7 +71,7 @@ def test_append_row_forwards_data_after_timestamp() -> None:
 
     sheet = mock_client.open.return_value.sheet1
     sent_row = sheet.append_row.call_args[0][0]
-    assert sent_row[1] == ["'0", "'3", "'8", "'1", "'4"]
+    assert sent_row[1:] == ["'0", "'3", "'8", "'1", "'4"]
 
 
 def test_append_row_preserves_leading_zeros_in_digit_string() -> None:
@@ -86,4 +86,19 @@ def test_append_row_preserves_leading_zeros_in_digit_string() -> None:
 
     sheet = mock_client.open.return_value.sheet1
     sent_row = sheet.append_row.call_args[0][0]
-    assert sent_row[1] == ["'03833"]
+    assert sent_row[1] == "'03833"
+
+
+def test_append_row_produces_flat_row() -> None:
+    """Row must be a flat list of scalar cells.
+
+    Regression: Sheets API rejects nested lists with
+    'Invalid values[N][M]: list_value' — each cell must be a scalar.
+    """
+    service, mock_client = _make_service_with_mock_client()
+
+    service.append_row("sheet_name", data=["03833"])
+
+    sheet = mock_client.open.return_value.sheet1
+    sent_row = sheet.append_row.call_args[0][0]
+    assert all(not isinstance(cell, list) for cell in sent_row)
