@@ -21,7 +21,8 @@ class GsheetService:
     ) -> None:
         sheet = self.client.open(table_name).sheet1
         timestamp = (date or datetime.now(timezone.utc)).strftime("%Y-%m-%d %H:%M:%S")
-        row = [timestamp, *data]
+        protected = [f"'{v}" if isinstance(v, str) else v for v in data]
+        row = [timestamp, protected]
         sheet.append_row(row, value_input_option="USER_ENTERED")
 
 

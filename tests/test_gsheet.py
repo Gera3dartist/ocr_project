@@ -58,8 +58,12 @@ def test_append_row_default_timestamp_matches_sheets_format() -> None:
     datetime.strptime(sent_row[0], "%Y-%m-%d %H:%M:%S")
 
 
-def test_append_row_forwards_data_cells_after_timestamp() -> None:
-    """Data cells must follow the timestamp in order."""
+def test_append_row_forwards_data_after_timestamp() -> None:
+    """Data payload must follow the timestamp in the row.
+
+    String values are apostrophe-prefixed so USER_ENTERED mode treats them as
+    literal text — this preserves leading zeros (e.g. '03833' not 3833).
+    """
     service, mock_client = _make_service_with_mock_client()
     fixed_time = datetime(2026, 4, 19, 12, 0, 0, tzinfo=timezone.utc)
 
@@ -67,4 +71,19 @@ def test_append_row_forwards_data_cells_after_timestamp() -> None:
 
     sheet = mock_client.open.return_value.sheet1
     sent_row = sheet.append_row.call_args[0][0]
-    assert sent_row[1:] == ["0", "3", "8", "1", "4"]
+    assert sent_row[1] == ["'0", "'3", "'8", "'1", "'4"]
+
+
+def test_append_row_preserves_leading_zeros_in_digit_string() -> None:
+    """Regression: '03833' must not be coerced to 3833 by Sheets.
+
+    USER_ENTERED mode treats digit-only strings as numbers, stripping leading
+    zeros. Prefixing with "'" forces Sheets to store the raw text.
+    """
+    service, mock_client = _make_service_with_mock_client()
+
+    service.append_row("sheet_name", data=["03833"])
+
+    sheet = mock_client.open.return_value.sheet1
+    sent_row = sheet.append_row.call_args[0][0]
+    assert sent_row[1] == ["'03833"]
