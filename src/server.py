@@ -7,16 +7,17 @@ import logging
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
+from dataclasses import asdict
 
 import cv2
-from flask import Flask, jsonify, send_file
+from flask import Flask, jsonify, request, send_file
 
 from src.capture import capture_image
 from src.config import load_config
-from src.pipeline import read_meter
 from src.preprocessing import load_and_prepare
 from src.roi_detector import find_counter_window
 from src.segmenter import binarize_region
+from src.services.measurements import make_readings
 
 PROJECT_ROOT = Path(__file__).parent.parent
 
@@ -38,41 +39,22 @@ def create_app() -> Flask:
         Returns:
             JSON with digits, confidence, transitioning, and timestamp.
         """
-        max_attempts = 3
-        min_confidence = 0.10
+        
 
         try:
-            best = None
-            for attempt in range(max_attempts):
-                with tempfile.NamedTemporaryFile(
-                    suffix=".jpg", delete=False
-                ) as tmp:
-                    image_path = tmp.name
+            readings = make_readings()
 
-                capture_image(image_path)
-                reading = read_meter(image_path)
+            if request.args.get("publish", "").lower() in ("true", "1"):
+                from src.services.gsheet import gsheet_service
 
-                if best is None or min(reading.confidence) > min(best.confidence):
-                    best = reading
-
-                if min(reading.confidence) >= min_confidence:
-                    break
-
-                logger.info(
-                    "Low confidence (%.3f), retrying (%d/%d)",
-                    min(reading.confidence),
-                    attempt + 1,
-                    max_attempts,
+                config = load_config(str(PROJECT_ROOT / "config.json"))
+                gsheet_service.append_row(
+                    table_name=config.gsheet_file_name,
+                    data=list(readings.digits),
                 )
 
-            return jsonify(
-                {
-                    "digits": best.digits,
-                    "confidence": best.confidence,
-                    "transitioning": best.transitioning,
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                }
-            )
+            return jsonify(asdict(readings))
+
         except Exception as e:
             logger.exception("Measurement failed")
             return jsonify({"error": str(e)}), 500

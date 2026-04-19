@@ -24,6 +24,7 @@ class Config:
     working_width: int = 640
     confidence_threshold: float = 0.6
     transition_margin: float = 0.1
+    gsheet_file_name: str = 'sensor_readings'
 
 
 def save_config(config: Config, path: str) -> None:

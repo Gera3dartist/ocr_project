@@ -27,8 +27,8 @@ def mock_pipeline():
         transitioning=[False, False, False, True, False],
     )
     with (
-        patch("src.server.capture_image", return_value="/tmp/shot.jpg") as mock_cap,
-        patch("src.server.read_meter", return_value=reading) as mock_read,
+        patch("src.services.measurements.capture_image", return_value="/tmp/shot.jpg") as mock_cap,
+        patch("src.services.measurements.read_meter", return_value=reading) as mock_read,
     ):
         yield mock_cap, mock_read, reading
 
@@ -62,7 +62,7 @@ def test_read_endpoint_returns_timestamp(client, mock_pipeline) -> None:
 def test_read_endpoint_handles_capture_error(client) -> None:
     """If capture fails, return 500 with error message."""
     with patch(
-        "src.server.capture_image",
+        "src.services.measurements.capture_image",
         side_effect=RuntimeError("camera disconnected"),
     ):
         resp = client.get("/read")
@@ -74,9 +74,9 @@ def test_read_endpoint_handles_capture_error(client) -> None:
 def test_read_endpoint_handles_pipeline_error(client) -> None:
     """If pipeline fails, return 500 with error message."""
     with (
-        patch("src.server.capture_image", return_value="/tmp/shot.jpg"),
+        patch("src.services.measurements.capture_image", return_value="/tmp/shot.jpg"),
         patch(
-            "src.server.read_meter",
+            "src.services.measurements.read_meter",
             side_effect=ValueError("Cannot detect counter window"),
         ),
     ):
