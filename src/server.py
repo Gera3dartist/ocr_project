@@ -50,7 +50,7 @@ def create_app() -> Flask:
                 config = load_config(str(PROJECT_ROOT / "config.json"))
                 gsheet_service.append_row(
                     table_name=config.gsheet_file_name,
-                    value=readings.digits
+                    data=[readings.digits]
                 )
 
             return jsonify(asdict(readings))

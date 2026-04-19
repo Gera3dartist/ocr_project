@@ -15,7 +15,7 @@ def publish_data():
     readings = make_readings()
     gsheet_service.append_row(
         table_name=config.gsheet_file_name,
-        data=readings.digits
+        data=[readings.digits]
     )
 
     
