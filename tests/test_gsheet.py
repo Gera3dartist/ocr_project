@@ -13,11 +13,11 @@ def _make_service_with_mock_client() -> tuple[GsheetService, MagicMock]:
     return service, mock_client
 
 
-def test_append_row_serializes_datetime_to_iso_string() -> None:
-    """Timestamp must be a string so gspread can JSON-serialize the request body.
+def test_append_row_formats_datetime_for_sheets_date_picker() -> None:
+    """Timestamp must be 'YYYY-MM-DD HH:MM:SS' so Google Sheets parses it as a date.
 
-    Regression: passing a raw datetime crashed the edge device with
-    "Object of type datetime is not JSON serializable" inside gspread's HTTP layer.
+    Regression: ISO 8601 (with 'T', microseconds, and '+00:00') is stored as a
+    plain string in Sheets, which breaks filtering, sorting, and the date picker.
     """
     service, mock_client = _make_service_with_mock_client()
     fixed_time = datetime(2026, 4, 19, 12, 0, 0, tzinfo=timezone.utc)
@@ -26,12 +26,26 @@ def test_append_row_serializes_datetime_to_iso_string() -> None:
 
     sheet = mock_client.open.return_value.sheet1
     sent_row = sheet.append_row.call_args[0][0]
-    assert sent_row[0] == fixed_time.isoformat()
-    assert not any(isinstance(cell, datetime) for cell in sent_row)
+    assert sent_row[0] == "2026-04-19 12:00:00"
 
 
-def test_append_row_default_timestamp_is_iso_string() -> None:
-    """When no date is provided, the default timestamp must also be stringified."""
+def test_append_row_uses_user_entered_value_input() -> None:
+    """Sheets only parses the date string if value_input_option='USER_ENTERED'.
+
+    The default 'RAW' stores the literal text without type inference, so the
+    date picker never activates.
+    """
+    service, mock_client = _make_service_with_mock_client()
+
+    service.append_row("sheet_name", data=["0", "3"])
+
+    sheet = mock_client.open.return_value.sheet1
+    _, kwargs = sheet.append_row.call_args
+    assert kwargs.get("value_input_option") == "USER_ENTERED"
+
+
+def test_append_row_default_timestamp_matches_sheets_format() -> None:
+    """Default timestamp must use the same Sheets-friendly format."""
     service, mock_client = _make_service_with_mock_client()
 
     service.append_row("sheet_name", data=["0", "3"])
@@ -39,7 +53,9 @@ def test_append_row_default_timestamp_is_iso_string() -> None:
     sheet = mock_client.open.return_value.sheet1
     sent_row = sheet.append_row.call_args[0][0]
     assert isinstance(sent_row[0], str)
-    assert "T" in sent_row[0]
+    assert "T" not in sent_row[0]
+    assert "+" not in sent_row[0]
+    datetime.strptime(sent_row[0], "%Y-%m-%d %H:%M:%S")
 
 
 def test_append_row_forwards_data_cells_after_timestamp() -> None:
