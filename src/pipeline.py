@@ -6,6 +6,11 @@ from pathlib import Path
 
 from src.config import load_config
 from src.preprocessing import load_and_prepare
+from src.preprocessing_v2 import (
+    prepare_clean_image,
+    segment_uniform,
+    to_template,
+)
 from src.recognizer import MeterReading, load_templates, recognize_all
 from src.roi_detector import find_counter_window
 from src.segmenter import segment_digits
@@ -46,15 +51,49 @@ def read_meter(
     return reading
 
 
+def read_meter_v2(
+    image_path: str,
+    config_path: str | None = None,
+    templates_path: str | None = None,
+) -> MeterReading:
+    """v2 reader: select_roi → Hough deskew → projection drum-crop → uniform slice.
+
+    Uses the same template-matching recognizer as v1; only the pre-processing
+    differs. Designed to consume `templates/templates_rebuilt.npz` (or any
+    archive built from the v2 preprocessing output).
+    """
+    if config_path is None:
+        config_path = str(PROJECT_ROOT / "config.json")
+    if templates_path is None:
+        templates_path = str(PROJECT_ROOT / "templates" / "templates.npz")
+
+    config = load_config(config_path)
+    templates = load_templates(templates_path)
+
+    gray, _ = load_and_prepare(image_path, config.working_width)
+    clean = prepare_clean_image(gray, config)
+    digit_crops = [
+        to_template(c, config.template_size)
+        for c in segment_uniform(clean, config.num_digits)
+    ]
+    return recognize_all(digit_crops, templates)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Read SAMGAZ G4 gas meter")
     parser.add_argument("image", help="Path to meter image")
     parser.add_argument("--config", default=None, help="Path to config.json")
     parser.add_argument("--templates", default=None, help="Path to templates.npz")
     parser.add_argument("--json", action="store_true", help="Output as JSON")
+    parser.add_argument(
+        "--v2",
+        action="store_true",
+        help="Use the v2 pre-processing pipeline (deskew + projection crop)",
+    )
     args = parser.parse_args()
 
-    reading = read_meter(args.image, args.config, args.templates)
+    reader = read_meter_v2 if args.v2 else read_meter
+    reading = reader(args.image, args.config, args.templates)
 
     if args.json:
         output = {

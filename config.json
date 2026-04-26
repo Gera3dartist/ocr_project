@@ -1,9 +1,9 @@
 {
   "roi": {
-    "x_norm": 0.3859,
-    "y_norm": 0.4604,
-    "w_norm": 0.2313,
-    "h_norm": 0.0792
+    "x_norm": 0.3969,
+    "y_norm": 0.4104,
+    "w_norm": 0.2297,
+    "h_norm": 0.0833
   },
   "num_digits": 5,
   "template_size": [

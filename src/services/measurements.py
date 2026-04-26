@@ -4,7 +4,7 @@ import logging
 import tempfile
 
 from src.capture import capture_image
-from src.pipeline import read_meter
+from src.pipeline import read_meter_v2
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +29,7 @@ def make_readings() -> Measurement:
             image_path = tmp.name
 
         capture_image(image_path)
-        reading = read_meter(image_path)
+        reading = read_meter_v2(image_path)
 
         if best is None or min(reading.confidence) > min(best.confidence):
             best = reading
